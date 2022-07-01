@@ -1,0 +1,7 @@
+alp --sum -r  -f nginx-backend/access.log > result
+
+alp --sum -r  -f nginx-backend/access.log  --aggregates='^/api/condition/.*$','^/api/isu/.+/icon$','^/api/isu/.+/graph$','^/assets/.*$','^/api/isu$','^/api/trend$' > alp_result.log
+
+
+
+cat nginx.log | alp ltsv --sort sum -r -m '^/api/condition/.*$','^/api/isu/.+/icon$','^/api/isu/.+/graph$','^/assets/.*$','^/api/isu$','^/api/trend$','^/api/isu/.+','^/isu/.*' > alp_result.log

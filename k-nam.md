@@ -1,0 +1,2 @@
+- Stage 0. initial 16000
+- Stage 1 (Stage 0) 
