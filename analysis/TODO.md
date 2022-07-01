@@ -23,3 +23,9 @@
 - Disable golang log
 - Disable nginx log
 - Check https://blog.recruit.co.jp/rtc/2021/04/26/isucon-2021-winter/
+
+
+# Score
+- Initial 9300
+- Stage 1. Remove some tx 9300
+- Stage 2. (from 1) Add index on unread_announcements(user_id) 10500
