@@ -84,5 +84,7 @@ CREATE TABLE `unread_announcements`
     CONSTRAINT FK_unread_announcements_user_id FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
 );
 
-ALTER TABLE unread_announcements ADD INDEX my1 (`user_id`);
+ALTER TABLE courses ADD INDEX my_courses_1 (`status`);
+
+ALTER TABLE unread_announcements ADD INDEX my_unread_announcements_1 (`user_id`);
 

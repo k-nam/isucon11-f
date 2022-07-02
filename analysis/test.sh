@@ -17,7 +17,7 @@ docker compose -f docker-compose-go.yaml exec mysql bash -c ': > /var/log/mysql/
 docker compose -f docker-compose-go.yaml exec mysql bash -c ': > /var/log/mysql/general.log'
 
 pushd ../benchmarker
-./bin/benchmarker 1> $DIR/bench.log 2>&1
+./bin/benchmarker | tee $DIR/bench.log
 popd
 
 # docker compose -f docker-compose-go.yaml cp frontend:/var/log/nginx/access.log $DIR/nginx.log
@@ -25,6 +25,6 @@ popd
 # docker compose -f docker-compose-go.yaml cp mysql:/var/log/mysql/general.log $DIR/general.log
 
 
-cat nginx/log/access.log | alp ltsv --sort sum -r -m  '^/api/announcements$','^/api/announcements/[^/]+','^/api/courses/[^/]+','/api/courses/.+/status$','^/api/courses/.+/classes$','^/api/courses/.+/classes/.+/assignments$','^/api/courses/.+/classes/.+/assignments/export$','^/api/courses/.+/classes/.+/assignments/export$','^/api/courses/.+/classes/.+/assignments/scores$' > $DIR/alp_result.log
+cat nginx/log/access.log | alp ltsv --sort sum -r -m  '^/api/announcements$','^/api/announcements/[^/]+$','^/api/courses/[^/]+$','/api/courses/.+/status$','^/api/courses/.+/classes$','^/api/courses/.+/classes/.+/assignments$','^/api/courses/.+/classes/.+/assignments/export$','^/api/courses/.+/classes/.+/assignments/scores$' > $DIR/alp_result.log
 
 pt-query-digest mysql/log/slow.log > $DIR/pt_query.log
