@@ -1214,7 +1214,7 @@ func (h *handlers) RegisterScores(c echo.Context) error {
 	if len(req) == 0 {
 		return c.NoContent(http.StatusNoContent)
 	}
-	
+
 	subs := []Submission{}
 
 	// fmt.Printf("score req len: %d\n", len(req))
@@ -1234,7 +1234,8 @@ func (h *handlers) RegisterScores(c echo.Context) error {
 	// 	return c.NoContent(http.StatusInternalServerError)
 	// }
 
-	if _, err := tx.NamedExec("REPLACE INTO `submissions` (`user_id`, `class_id`, `score`, `file_name`) VALUES (:user_id, :class_id, :score, :file_name)", subs); err != nil {
+	if _, err := tx.NamedExec("INSERT INTO `submissions` (`user_id`, `class_id`, `score`, `file_name`)" +
+	" VALUES (:user_id, :class_id, :score, :file_name) ON DUPLICATE KEY UPDATE `score` = VALUES(`score`) ", subs); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
