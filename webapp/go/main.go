@@ -389,7 +389,7 @@ func (h *handlers) GetRegisteredCourses(c echo.Context) error {
 	defer tx.Rollback()
 
 	var courses []Course
-	query := "SELECT `courses`.*" +
+	query := "SELECT `id`, `name`, `period`, `day_of_week`, `teacher_id` " +
 		" FROM `courses`" +
 		" JOIN `registrations` ON `courses`.`id` = `registrations`.`course_id`" +
 		" WHERE `courses`.`status` != ? AND `registrations`.`user_id` = ?"
@@ -402,7 +402,7 @@ func (h *handlers) GetRegisteredCourses(c echo.Context) error {
 	res := make([]GetRegisteredCourseResponseContent, 0, len(courses))
 	for _, course := range courses {
 		var teacher User
-		if err := tx.Get(&teacher, "SELECT * FROM `users` WHERE `id` = ?", course.TeacherID); err != nil {
+		if err := tx.Get(&teacher, "SELECT `id`, `name` FROM `users` WHERE `id` = ?", course.TeacherID); err != nil {
 			c.Logger().Error(err)
 			return c.NoContent(http.StatusInternalServerError)
 		}

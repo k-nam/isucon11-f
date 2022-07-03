@@ -9,7 +9,8 @@
 - Use mysql connection pool (max idle conn)
 
 # Using memory
-
+- Cache class scores. Update in RegisterScores
+- Cache course scores, but only for closed courses. Update in SetCourseStatus
 
 # Can't use
 
@@ -31,4 +32,4 @@
 - Stage 1. Remove some tx 9300
 - Stage 2. (from 1) Add index on unread_announcements(user_id) 10500
 - Stage 3. (from 2) Use db conn pool 12800
-- Stage 4. (from 3) 
+- Stage 4. (from 3)
