@@ -711,7 +711,7 @@ func (h *handlers) GetGrades(c echo.Context) error {
 
 	var gpas = []float64{}
 
-	for i, _ := range userCreditSums {
+	for i := range userCreditSums {
 		gpas = append(gpas, float64(userCreditSums2[i].ScoreSum)/float64(userCreditSums[i].Credits)/100)
 	}
 
