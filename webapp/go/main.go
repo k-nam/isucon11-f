@@ -678,26 +678,44 @@ func (h *handlers) GetGrades(c echo.Context) error {
 
 	// GPAの統計値
 	// 一つでも修了した科目がある学生のGPA一覧
-	var gpas []float64
-	query = "SELECT IFNULL(SUM(`submissions`.`score` * `courses`.`credit`), 0) / 100 / `credits`.`credits` AS `gpa`" +
-		" FROM `users`" +
-		" JOIN (" +
-		"     SELECT `users`.`id` AS `user_id`, SUM(`courses`.`credit`) AS `credits`" +
+	type userCreditSum struct {
+		UserId   string `db:"user_id"`
+		Credits  int64  `db:"credits"`
+		ScoreSum int64  `db:"score_sum"`
+	}
+	userCreditSums := []userCreditSum{}
+
+	query = "SELECT `users`.`id` AS `user_id`, SUM(`courses`.`credit`) AS `credits`" +
 		"     FROM `users`" +
 		"     JOIN `registrations` ON `users`.`id` = `registrations`.`user_id`" +
 		"     JOIN `courses` ON `registrations`.`course_id` = `courses`.`id` AND `courses`.`status` = ?" +
-		"     GROUP BY `users`.`id`" +
-		" ) AS `credits` ON `credits`.`user_id` = `users`.`id`" +
+		"     WHERE `users`.`type` = ? GROUP BY `users`.`id` ORDER BY `users`.`id`"
+	if err := h.DB.Select(&userCreditSums, query, StatusClosed, Student); err != nil {
+		c.Logger().Error(err)
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	userCreditSums2 := []userCreditSum{}
+	query = "SELECT `users`.`id` AS `user_id`, IFNULL(SUM(`submissions`.`score` * `courses`.`credit`), 0) AS `score_sum`" +
+		" FROM `users`" +
 		" JOIN `registrations` ON `users`.`id` = `registrations`.`user_id`" +
 		" JOIN `courses` ON `registrations`.`course_id` = `courses`.`id` AND `courses`.`status` = ?" +
 		" LEFT JOIN `classes` ON `courses`.`id` = `classes`.`course_id`" +
 		" LEFT JOIN `submissions` ON `users`.`id` = `submissions`.`user_id` AND `submissions`.`class_id` = `classes`.`id`" +
 		" WHERE `users`.`type` = ?" +
-		" GROUP BY `users`.`id`"
-	if err := h.DB.Select(&gpas, query, StatusClosed, StatusClosed, Student); err != nil {
+		" GROUP BY `users`.`id` ORDER BY `users`.`id`"
+	if err := h.DB.Select(&userCreditSums2, query, StatusClosed, Student); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	var gpas = []float64{}
+
+	for i, _ := range userCreditSums {
+		gpas = append(gpas, float64(userCreditSums2[i].ScoreSum)/float64(userCreditSums[i].Credits)/100)
+	}
+
+	fmt.Printf("userCreditSum %v, score sum %v\n", userCreditSums, userCreditSums2)
 
 	res := GetGradeResponse{
 		Summary: Summary{
@@ -1234,8 +1252,8 @@ func (h *handlers) RegisterScores(c echo.Context) error {
 	// 	return c.NoContent(http.StatusInternalServerError)
 	// }
 
-	if _, err := tx.NamedExec("INSERT INTO `submissions` (`user_id`, `class_id`, `score`, `file_name`)" +
-	" VALUES (:user_id, :class_id, :score, :file_name) ON DUPLICATE KEY UPDATE `score` = VALUES(`score`) ", subs); err != nil {
+	if _, err := tx.NamedExec("INSERT INTO `submissions` (`user_id`, `class_id`, `score`, `file_name`)"+
+		" VALUES (:user_id, :class_id, :score, :file_name) ON DUPLICATE KEY UPDATE `score` = VALUES(`score`) ", subs); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
