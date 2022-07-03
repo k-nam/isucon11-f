@@ -1,12 +1,31 @@
 package main
 
-import "github.com/jmoiron/sqlx"
+import (
+	"sync"
 
-func getUserIdFromCode(db *sqlx.DB, code string) (string, error) {
+	"github.com/jmoiron/sqlx"
+)
+
+var lock_1 sync.Mutex
+var userCodeToUserId = map[string]string{}
+
+
+func getUserIdFromCode(db *sqlx.DB, code string) string {
+	lock_1.Lock()
+	defer lock_1.Unlock()
+
+	cachedId, ok := userCodeToUserId[code]
+	if ok {
+		return cachedId
+	}
+
 	var id string
 	err := db.Get(&id, "SELECT `id` FROM `users` WHERE `code` = ?", code)
 	if err != nil {
-		return "", err
+		panic("get user id from code error")
 	}
-	return id, nil
+
+	userCodeToUserId[code] = id
+
+	return id
 }

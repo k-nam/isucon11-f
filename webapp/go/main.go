@@ -1188,7 +1188,6 @@ type Score struct {
 // RegisterScores PUT /api/courses/:courseID/classes/:classID/assignments/scores 採点結果登録
 func (h *handlers) RegisterScores(c echo.Context) error {
 	classID := c.Param("classID")
-
 	tx, err := h.DB.Beginx()
 	if err != nil {
 		c.Logger().Error(err)
@@ -1212,13 +1211,32 @@ func (h *handlers) RegisterScores(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.String(http.StatusBadRequest, "Invalid format.")
 	}
+	if len(req) == 0 {
+		return c.NoContent(http.StatusNoContent)
+	}
+	
+	subs := []Submission{}
 
-	fmt.Printf("score req len: %d\n", len(req))
+	// fmt.Printf("score req len: %d\n", len(req))
+
 	for _, score := range req {
-		if _, err := tx.Exec("UPDATE `submissions` JOIN `users` ON `users`.`id` = `submissions`.`user_id` SET `score` = ? WHERE `users`.`code` = ? AND `class_id` = ?", score.Score, score.UserCode, classID); err != nil {
-			c.Logger().Error(err)
-			return c.NoContent(http.StatusInternalServerError)
-		}
+		userId := getUserIdFromCode(h.DB, score.UserCode)
+		// fmt.Printf("Insert score for user: %s, %s, %s\n", score.UserCode, userId, classID)
+		subs = append(subs, Submission{
+			UserID:   userId,
+			ClassId:  classID,
+			FileName: "",
+			Score:    score.Score,
+		})
+	}
+	// if _, err := tx.Exec("UPDATE `submissions` JOIN `users` ON `users`.`id` = `submissions`.`user_id` SET `score` = ? WHERE `users`.`code` = ? AND `class_id` = ?", score.Score, score.UserCode, classID); err != nil {
+	// 	c.Logger().Error(err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
+
+	if _, err := tx.NamedExec("REPLACE INTO `submissions` (`user_id`, `class_id`, `score`, `file_name`) VALUES (:user_id, :class_id, :score, :file_name)", subs); err != nil {
+		c.Logger().Error(err)
+		return c.NoContent(http.StatusInternalServerError)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1233,6 +1251,8 @@ type Submission struct {
 	UserID   string `db:"user_id"`
 	UserCode string `db:"user_code"`
 	FileName string `db:"file_name"`
+	ClassId  string `db:"class_id"`
+	Score    int    `db:"score"`
 }
 
 // DownloadSubmittedAssignments GET /api/courses/:courseID/classes/:classID/assignments/export 提出済みの課題ファイルをzip形式で一括ダウンロード
