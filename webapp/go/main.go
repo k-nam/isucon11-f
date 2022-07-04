@@ -974,6 +974,8 @@ func (h *handlers) SetCourseStatus(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	fmt.Printf("Close course, %v\n", getCourseScoreSums(h.DB, courseID))
+
 	return c.NoContent(http.StatusOK)
 }
 

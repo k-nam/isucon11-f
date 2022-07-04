@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
@@ -144,14 +145,33 @@ func getGpaInfo(db *sqlx.DB, myGpa float64) GpaInfo {
 	}
 }
 
-func getCourseScoreSums(db *sqlx.DB) {
+func getCourseScoreSums(db *sqlx.DB, courseId string) []UserGpaInfo {
 	userScoreSums := []UserGpaInfo{}
-	query := "SELECT `submissions`.`user_id` AS `user_id`, IFNULL(SUM(`submissions`.`score`), 0) AS `score_sum`" +
-		" FROM `courses`" +
+	query := "SELECT `users`.`id` AS `user_id`, IFNULL(SUM(`submissions`.`score` * `courses`.`credit`), 0) AS `score_sum`" +
+		" FROM `users`" +
+		" JOIN `registrations` ON `users`.`id` = `registrations`.`user_id`" +
+		" JOIN `courses` ON `registrations`.`course_id` = `courses`.`id` AND `courses`.`status` = ?" +
 		" LEFT JOIN `classes` ON `courses`.`id` = `classes`.`course_id`" +
-		" LEFT JOIN `submissions` ON `submissions`.`class_id` = `classes`.`id`" +
-		" GROUP BY `submissions`.`user_id`"
-	if err := db.Select(&userScoreSums, query, StatusClosed, Student); err != nil {
+		" LEFT JOIN `submissions` ON `users`.`id` = `submissions`.`user_id` AND `submissions`.`class_id` = `classes`.`id`" +
+		" WHERE `users`.`type` = ? AND `courses`.`id` = ? " +
+		" GROUP BY `users`.`id` ORDER BY `users`.`id`"
+		if err := db.Select(&userScoreSums, query, StatusClosed, Student, courseId); err != nil {
+			fmt.Println("getCourseScoreSums error 1")
 		panic(err)
 	}
+
+	var credit int = 0
+	query = "SELECT `courses`.`credit` FROM `courses` WHERE `courses`.`id` = ?"
+	err := db.Get(&credit, query, courseId)
+	if err != nil {
+		fmt.Println("getCourseScoreSums error 2")
+		panic(err)
+	}
+
+	for i := range userScoreSums {
+		userScoreSums[i].CreditSum = credit
+		userScoreSums[i].CreditScoreSum *= credit
+	}
+
+	return userScoreSums
 }
