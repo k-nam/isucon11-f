@@ -676,55 +676,59 @@ func (h *handlers) GetGrades(c echo.Context) error {
 		myGPA = myGPA / 100 / float64(myCredits)
 	}
 
-	// GPAの統計値
-	// 一つでも修了した科目がある学生のGPA一覧
-	type userCreditSum struct {
-		UserId   string `db:"user_id"`
-		Credits  int64  `db:"credits"`
-		ScoreSum int64  `db:"score_sum"`
-	}
-	userCreditSums := []userCreditSum{}
+	/*
+		// GPAの統計値
+		// 一つでも修了した科目がある学生のGPA一覧
+		type userCreditSum struct {
+			UserId   string `db:"user_id"`
+			Credits  int64  `db:"credits"`
+			ScoreSum int64  `db:"score_sum"`
+		}
+		userCreditSums := []userCreditSum{}
 
-	query = "SELECT `users`.`id` AS `user_id`, SUM(`courses`.`credit`) AS `credits`" +
-		"     FROM `users`" +
-		"     JOIN `registrations` ON `users`.`id` = `registrations`.`user_id`" +
-		"     JOIN `courses` ON `registrations`.`course_id` = `courses`.`id` AND `courses`.`status` = ?" +
-		"     WHERE `users`.`type` = ? GROUP BY `users`.`id` ORDER BY `users`.`id`"
-	if err := h.DB.Select(&userCreditSums, query, StatusClosed, Student); err != nil {
-		c.Logger().Error(err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
+		query = "SELECT `users`.`id` AS `user_id`, SUM(`courses`.`credit`) AS `credits`" +
+			"     FROM `users`" +
+			"     JOIN `registrations` ON `users`.`id` = `registrations`.`user_id`" +
+			"     JOIN `courses` ON `registrations`.`course_id` = `courses`.`id` AND `courses`.`status` = ?" +
+			"     WHERE `users`.`type` = ? GROUP BY `users`.`id` ORDER BY `users`.`id`"
+		if err := h.DB.Select(&userCreditSums, query, StatusClosed, Student); err != nil {
+			c.Logger().Error(err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
 
-	userCreditSums2 := []userCreditSum{}
-	query = "SELECT `users`.`id` AS `user_id`, IFNULL(SUM(`submissions`.`score` * `courses`.`credit`), 0) AS `score_sum`" +
-		" FROM `users`" +
-		" JOIN `registrations` ON `users`.`id` = `registrations`.`user_id`" +
-		" JOIN `courses` ON `registrations`.`course_id` = `courses`.`id` AND `courses`.`status` = ?" +
-		" LEFT JOIN `classes` ON `courses`.`id` = `classes`.`course_id`" +
-		" LEFT JOIN `submissions` ON `users`.`id` = `submissions`.`user_id` AND `submissions`.`class_id` = `classes`.`id`" +
-		" WHERE `users`.`type` = ?" +
-		" GROUP BY `users`.`id` ORDER BY `users`.`id`"
-	if err := h.DB.Select(&userCreditSums2, query, StatusClosed, Student); err != nil {
-		c.Logger().Error(err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
+		userCreditSums2 := []userCreditSum{}
+		query = "SELECT `users`.`id` AS `user_id`, IFNULL(SUM(`submissions`.`score` * `courses`.`credit`), 0) AS `score_sum`" +
+			" FROM `users`" +
+			" JOIN `registrations` ON `users`.`id` = `registrations`.`user_id`" +
+			" JOIN `courses` ON `registrations`.`course_id` = `courses`.`id` AND `courses`.`status` = ?" +
+			" LEFT JOIN `classes` ON `courses`.`id` = `classes`.`course_id`" +
+			" LEFT JOIN `submissions` ON `users`.`id` = `submissions`.`user_id` AND `submissions`.`class_id` = `classes`.`id`" +
+			" WHERE `users`.`type` = ?" +
+			" GROUP BY `users`.`id` ORDER BY `users`.`id`"
+		if err := h.DB.Select(&userCreditSums2, query, StatusClosed, Student); err != nil {
+			c.Logger().Error(err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
 
-	var gpas = []float64{}
+		var gpas = []float64{}
 
-	for i := range userCreditSums {
-		gpas = append(gpas, float64(userCreditSums2[i].ScoreSum)/float64(userCreditSums[i].Credits)/100)
-	}
+		for i := range userCreditSums {
+			gpas = append(gpas, float64(userCreditSums2[i].ScoreSum)/float64(userCreditSums[i].Credits)/100)
+		}
 
-	fmt.Printf("userCreditSum %v, score sum %v\n", userCreditSums, userCreditSums2)
+		// fmt.Printf("userCreditSum %v, score sum %v\n", userCreditSums, userCreditSums2)
+	*/
+
+	myGpas := getGpaInfo(h.DB, myGPA)
 
 	res := GetGradeResponse{
 		Summary: Summary{
 			Credits:   myCredits,
 			GPA:       myGPA,
-			GpaTScore: tScoreFloat64(myGPA, gpas),
-			GpaAvg:    averageFloat64(gpas, 0),
-			GpaMax:    maxFloat64(gpas, 0),
-			GpaMin:    minFloat64(gpas, 0),
+			GpaTScore: tScoreFloat64(myGPA, myGpas),
+			GpaAvg:    averageFloat64(myGpas, 0),
+			GpaMax:    maxFloat64(myGpas, 0),
+			GpaMin:    minFloat64(myGpas, 0),
 		},
 		CourseResults: courseResults,
 	}
@@ -974,7 +978,11 @@ func (h *handlers) SetCourseStatus(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	fmt.Printf("Close course, %v\n", getCourseScoreSums(h.DB, courseID))
+	if req.Status == StatusClosed {
+		scores := getCourseScoreSums(h.DB, courseID)
+		addScores(scores)
+		fmt.Printf("scores, %v\n", userGpaInfo)
+	}
 
 	return c.NoContent(http.StatusOK)
 }
@@ -1008,15 +1016,15 @@ func (h *handlers) GetClasses(c echo.Context) error {
 
 	courseID := c.Param("courseID")
 
-	tx, err := h.DB.Beginx()
-	if err != nil {
-		c.Logger().Error(err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	defer tx.Rollback()
+	// tx, err := h.DB.Beginx()
+	// if err != nil {
+	// 	c.Logger().Error(err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
+	// defer tx.Rollback()
 
 	var count int
-	if err := tx.Get(&count, "SELECT COUNT(*) FROM `courses` WHERE `id` = ?", courseID); err != nil {
+	if err := h.DB.Get(&count, "SELECT COUNT(*) FROM `courses` WHERE `id` = ?", courseID); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
@@ -1030,15 +1038,15 @@ func (h *handlers) GetClasses(c echo.Context) error {
 		" LEFT JOIN `submissions` ON `classes`.`id` = `submissions`.`class_id` AND `submissions`.`user_id` = ?" +
 		" WHERE `classes`.`course_id` = ?" +
 		" ORDER BY `classes`.`part`"
-	if err := tx.Select(&classes, query, userID, courseID); err != nil {
+	if err := h.DB.Select(&classes, query, userID, courseID); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	if err := tx.Commit(); err != nil {
-		c.Logger().Error(err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
+	// if err := tx.Commit(); err != nil {
+	// 	c.Logger().Error(err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
 
 	// 結果が0件の時は空配列を返却
 	res := make([]GetClassResponse, 0, len(classes))

@@ -54,21 +54,21 @@ type UserGpaInfo struct {
 	Gpa            float64
 }
 
-func addScores(scores map[string][]int) {
+func addScores(scores []UserGpaInfo) {
 	lock_2.Lock()
 	defer lock_2.Unlock()
 
 	// user id -> (credit, score)
-	for userId, score := range scores {
-		info, ok := userGpaInfo[userId]
+	for _, score := range scores {
+		info, ok := userGpaInfo[score.UserId]
 		if !ok {
 			info = UserGpaInfo{}
 		}
-		info.CreditSum += score[0]
-		info.CreditScoreSum += score[0] * score[1]
+		info.CreditSum += score.CreditSum
+		info.CreditScoreSum += score.CreditScoreSum
 		newGpa := float64(info.CreditScoreSum) / float64(info.CreditSum) / 100.0
 		info.Gpa = newGpa
-		userGpaInfo[userId] = info
+		userGpaInfo[score.UserId] = info
 	}
 }
 
@@ -111,38 +111,21 @@ func loadGpa(db *sqlx.DB) {
 	}
 }
 
-func getGpaInfo(db *sqlx.DB, myGpa float64) GpaInfo {
+func getGpaInfo(db *sqlx.DB, myGpa float64) []float64 {
 	lock_2.Lock()
 	defer lock_2.Unlock()
 
 	if !gpaLoaded {
+		gpaLoaded = true
 		loadGpa(db)
 	}
-
-	numUsers := 0
-	var gpaSum float64 = 0
-	var max float64 = 0
-	var min float64 = 0
 
 	gpas := []float64{}
 	for _, info := range userGpaInfo {
 		gpas = append(gpas, info.Gpa)
-		numUsers++
-		gpaSum += info.Gpa
-		if info.Gpa > max {
-			max = info.Gpa
-		}
-		if info.Gpa < min {
-			min = info.Gpa
-		}
 	}
 
-	return GpaInfo{
-		gpaAgv: gpaSum / float64(numUsers),
-		gpaMax: max,
-		gpaMin: min,
-		tScore: tScoreFloat64(myGpa, gpas),
-	}
+	return gpas
 }
 
 func getCourseScoreSums(db *sqlx.DB, courseId string) []UserGpaInfo {
@@ -170,7 +153,6 @@ func getCourseScoreSums(db *sqlx.DB, courseId string) []UserGpaInfo {
 
 	for i := range userScoreSums {
 		userScoreSums[i].CreditSum = credit
-		userScoreSums[i].CreditScoreSum *= credit
 	}
 
 	return userScoreSums
