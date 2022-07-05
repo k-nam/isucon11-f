@@ -20,7 +20,9 @@ func getUserIdFromCode(db *sqlx.DB, code string) string {
 	}
 
 	var id string
+	// start := time.Now()
 	err := db.Get(&id, "SELECT `id` FROM `users` WHERE `code` = ?", code)
+	// fmt.Printf("get user id. code: %s,  took: %d\n", code, time.Now().Sub(start).Milliseconds())
 	if err != nil {
 		panic("get user id from code error")
 	}
@@ -68,6 +70,7 @@ func addScores(scores []UserGpaInfo) {
 		info.CreditScoreSum += score.CreditScoreSum
 		newGpa := float64(info.CreditScoreSum) / float64(info.CreditSum) / 100.0
 		info.Gpa = newGpa
+		fmt.Printf("new gpa %d, %d, %f, %s\n", info.CreditSum, info.CreditScoreSum, newGpa, score.UserId)
 		userGpaInfo[score.UserId] = info
 	}
 }
@@ -77,6 +80,7 @@ var gpaLoaded = false
 func loadGpa(db *sqlx.DB) {
 	// lock_2.Lock()
 	// defer lock_2.Unlock()
+	fmt.Printf("Load gpa\n")
 
 	userCreditSums := []UserGpaInfo{}
 
@@ -88,7 +92,7 @@ func loadGpa(db *sqlx.DB) {
 	if err := db.Select(&userCreditSums, query, StatusClosed, Student); err != nil {
 		panic(err)
 	}
-
+	fmt.Printf("len 1 %d\n", len(userCreditSums))
 	userCreditSums2 := []UserGpaInfo{}
 	query = "SELECT `users`.`id` AS `user_id`, IFNULL(SUM(`submissions`.`score` * `courses`.`credit`), 0) AS `score_sum`" +
 		" FROM `users`" +
@@ -101,8 +105,10 @@ func loadGpa(db *sqlx.DB) {
 	if err := db.Select(&userCreditSums2, query, StatusClosed, Student); err != nil {
 		panic(err)
 	}
+	fmt.Printf("len 2 %d\n", len(userCreditSums2))
 
 	for i := range userCreditSums {
+		fmt.Printf("initial gpa %s, %d, %d\n", userCreditSums[i].UserId, userCreditSums[i].CreditSum, userCreditSums2[i].CreditScoreSum)
 		userGpaInfo[userCreditSums[i].UserId] = UserGpaInfo{
 			CreditSum:      userCreditSums[i].CreditSum,
 			CreditScoreSum: userCreditSums2[i].CreditScoreSum,
@@ -115,6 +121,7 @@ func getGpaInfo(db *sqlx.DB, myGpa float64) []float64 {
 	lock_2.Lock()
 	defer lock_2.Unlock()
 
+	fmt.Printf("get gpa info\n")
 	if !gpaLoaded {
 		gpaLoaded = true
 		loadGpa(db)
@@ -128,7 +135,7 @@ func getGpaInfo(db *sqlx.DB, myGpa float64) []float64 {
 	return gpas
 }
 
-func getCourseScoreSums(db *sqlx.DB, courseId string) []UserGpaInfo {
+func getCourseScoreSums(db *sqlx.Tx, courseId string) []UserGpaInfo {
 	userScoreSums := []UserGpaInfo{}
 	query := "SELECT `users`.`id` AS `user_id`, IFNULL(SUM(`submissions`.`score` * `courses`.`credit`), 0) AS `score_sum`" +
 		" FROM `users`" +
@@ -138,8 +145,8 @@ func getCourseScoreSums(db *sqlx.DB, courseId string) []UserGpaInfo {
 		" LEFT JOIN `submissions` ON `users`.`id` = `submissions`.`user_id` AND `submissions`.`class_id` = `classes`.`id`" +
 		" WHERE `users`.`type` = ? AND `courses`.`id` = ? " +
 		" GROUP BY `users`.`id` ORDER BY `users`.`id`"
-		if err := db.Select(&userScoreSums, query, StatusClosed, Student, courseId); err != nil {
-			fmt.Println("getCourseScoreSums error 1")
+	if err := db.Select(&userScoreSums, query, StatusClosed, Student, courseId); err != nil {
+		fmt.Println("getCourseScoreSums error 1")
 		panic(err)
 	}
 
@@ -156,4 +163,60 @@ func getCourseScoreSums(db *sqlx.DB, courseId string) []UserGpaInfo {
 	}
 
 	return userScoreSums
+}
+
+var submissionLock sync.Mutex
+
+// {userId_classId} -> filename
+var submissions = map[string]Submission{}
+
+const bulkSize = 10
+
+func addSubmission(db *sqlx.DB, sub Submission) {
+	submissionLock.Lock()
+	defer submissionLock.Unlock()
+	key := fmt.Sprintf("%s_%s", sub.UserID, sub.ClassId)
+	submissions[key] = sub
+
+	// fmt.Printf("add submission: %s\n", key)
+	// if len(submissions) >= bulkSize {
+	// 	fmt.Printf("db bulk: %d\n", len(submissions))
+	// 	arr := []Submission{}
+	// 	for _, sub := range submissions {
+	// 		arr = append(arr, sub)
+	// 	}
+
+	// 	db.NamedExec("INSERT INTO `submissions` (`user_id`, `class_id`, `file_name`) VALUES (:user_id, :class_id, :file_name) ON DUPLICATE KEY UPDATE `file_name` = VALUES(`file_name`)", arr)
+	// }
+}
+
+// func bulkInsertSubs(db *sqlx.DB) {
+// 	submissionLock.Lock()
+// 	defer submissionLock.Unlock()
+
+// 	arr := []Submission{}
+// 	for _, sub := range submissions {
+// 		arr = append(arr, sub)
+// 	}
+
+// 	db.NamedExec("INSERT INTO `submissions` (`user_id`, `class_id`, `file_name`) VALUES (:user_id, :class_id, :file_name) ON DUPLICATE KEY UPDATE `file_name` = VALUES(`file_name`)", arr)
+// }
+
+func bulkInsertSubsTx(tx *sqlx.Tx, classID string) {
+	submissionLock.Lock()
+	defer submissionLock.Unlock()
+
+	arr := []Submission{}
+	for key, sub := range submissions {
+		if sub.ClassId == classID {
+			arr = append(arr, sub)
+			delete(submissions, key)
+			// fmt.Printf("tx bulk: %s \n", classID)
+		}
+	}
+	// fmt.Printf("tx bulk: %s , %d\n", classID, len(arr))
+	_, err := tx.NamedExec("INSERT INTO `submissions` (`user_id`, `class_id`, `file_name`) VALUES (:user_id, :class_id, :file_name) ON DUPLICATE KEY UPDATE `file_name` = VALUES(`file_name`)", arr)
+	if err != nil {
+		fmt.Printf("%v\n", err)
+	}
 }

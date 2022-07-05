@@ -40,7 +40,7 @@ type handlers struct {
 
 func main() {
 	fmt.Println("main start")
-	f, err := os.Create("pprof/" + time.Now().Format("2006-01-02 15:04:05"))
+	f, err := os.Create("pprof.data")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -973,15 +973,16 @@ func (h *handlers) SetCourseStatus(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	// fmt.Printf("Close course: %s\n", courseID)
+	if req.Status == StatusClosed {
+		scores := getCourseScoreSums(tx, courseID)
+		addScores(scores)
+		// fmt.Printf("scores, %v\n", userGpaInfo)
+	}
+	// fmt.Printf("Finish close course: %s\n", courseID)
 	if err := tx.Commit(); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
-	}
-
-	if req.Status == StatusClosed {
-		scores := getCourseScoreSums(h.DB, courseID)
-		addScores(scores)
-		fmt.Printf("scores, %v\n", userGpaInfo)
 	}
 
 	return c.NoContent(http.StatusOK)
@@ -1183,10 +1184,16 @@ func (h *handlers) SubmitAssignment(c echo.Context) error {
 	}
 	defer file.Close()
 
-	if _, err := h.DB.Exec("INSERT INTO `submissions` (`user_id`, `class_id`, `file_name`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `file_name` = VALUES(`file_name`)", userID, classID, header.Filename); err != nil {
-		c.Logger().Error(err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
+	// if _, err := h.DB.Exec("INSERT INTO `submissions` (`user_id`, `class_id`, `file_name`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `file_name` = VALUES(`file_name`)", userID, classID, header.Filename); err != nil {
+	// 	c.Logger().Error(err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
+
+	addSubmission(h.DB, Submission{
+		UserID:   userID,
+		ClassId:  classID,
+		FileName: header.Filename,
+	})
 
 	data, err := io.ReadAll(file)
 	if err != nil {
@@ -1216,15 +1223,15 @@ type Score struct {
 // RegisterScores PUT /api/courses/:courseID/classes/:classID/assignments/scores 採点結果登録
 func (h *handlers) RegisterScores(c echo.Context) error {
 	classID := c.Param("classID")
-	tx, err := h.DB.Beginx()
-	if err != nil {
-		c.Logger().Error(err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	defer tx.Rollback()
+	// tx, err := h.DB.Beginx()
+	// if err != nil {
+	// 	c.Logger().Error(err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
+	// defer tx.Rollback()
 
 	var submissionClosed bool
-	if err := tx.Get(&submissionClosed, "SELECT `submission_closed` FROM `classes` WHERE `id` = ? FOR SHARE", classID); err != nil && err != sql.ErrNoRows {
+	if err := h.DB.Get(&submissionClosed, "SELECT `submission_closed` FROM `classes` WHERE `id` = ? FOR SHARE", classID); err != nil && err != sql.ErrNoRows {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	} else if err == sql.ErrNoRows {
@@ -1247,6 +1254,7 @@ func (h *handlers) RegisterScores(c echo.Context) error {
 
 	// fmt.Printf("score req len: %d\n", len(req))
 
+	// start := time.Now()
 	for _, score := range req {
 		userId := getUserIdFromCode(h.DB, score.UserCode)
 		// fmt.Printf("Insert score for user: %s, %s, %s\n", score.UserCode, userId, classID)
@@ -1257,21 +1265,26 @@ func (h *handlers) RegisterScores(c echo.Context) error {
 			Score:    score.Score,
 		})
 	}
+
+	// middle := time.Now()
+	// fmt.Printf("This 1 took %d\n", time.Duration(middle.Sub(start).Milliseconds()))
 	// if _, err := tx.Exec("UPDATE `submissions` JOIN `users` ON `users`.`id` = `submissions`.`user_id` SET `score` = ? WHERE `users`.`code` = ? AND `class_id` = ?", score.Score, score.UserCode, classID); err != nil {
 	// 	c.Logger().Error(err)
 	// 	return c.NoContent(http.StatusInternalServerError)
 	// }
 
-	if _, err := tx.NamedExec("INSERT INTO `submissions` (`user_id`, `class_id`, `score`, `file_name`)"+
+	if _, err := h.DB.NamedExec("INSERT INTO `submissions` (`user_id`, `class_id`, `score`, `file_name`)"+
 		" VALUES (:user_id, :class_id, :score, :file_name) ON DUPLICATE KEY UPDATE `score` = VALUES(`score`) ", subs); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	if err := tx.Commit(); err != nil {
-		c.Logger().Error(err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
+	// if err := tx.Commit(); err != nil {
+	// 	c.Logger().Error(err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
+
+	// fmt.Printf("This 2 took %d\n", time.Duration(time.Now().Sub(middle).Milliseconds()))
 
 	return c.NoContent(http.StatusNoContent)
 }
@@ -1303,6 +1316,9 @@ func (h *handlers) DownloadSubmittedAssignments(c echo.Context) error {
 	if classCount == 0 {
 		return c.String(http.StatusNotFound, "No such class.")
 	}
+
+	bulkInsertSubsTx(tx, classID)
+
 	var submissions []Submission
 	query := "SELECT `submissions`.`user_id`, `submissions`.`file_name`, `users`.`code` AS `user_code`" +
 		" FROM `submissions`" +
@@ -1312,6 +1328,8 @@ func (h *handlers) DownloadSubmittedAssignments(c echo.Context) error {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	// fmt.Printf("submissions: %s, %d\n", classID, len(submissions))
 
 	zipFilePath := AssignmentsDirectory + classID + ".zip"
 	if err := createSubmissionsZip(zipFilePath, classID, submissions); err != nil {
