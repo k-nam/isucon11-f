@@ -56,7 +56,7 @@ type UserGpaInfo struct {
 	Gpa            float64
 }
 
-func addScores(scores []UserGpaInfo) {
+func addScores(scores []UserGpaInfo, courseId string) {
 	lock_2.Lock()
 	defer lock_2.Unlock()
 
@@ -70,7 +70,7 @@ func addScores(scores []UserGpaInfo) {
 		info.CreditScoreSum += score.CreditScoreSum
 		newGpa := float64(info.CreditScoreSum) / float64(info.CreditSum) / 100.0
 		info.Gpa = newGpa
-		fmt.Printf("new gpa %d, %d, %f, %s\n", info.CreditSum, info.CreditScoreSum, newGpa, score.UserId)
+		fmt.Printf("new gpa %d, %d, %f, %s, %s\n", info.CreditSum, info.CreditScoreSum, newGpa, score.UserId, courseId)
 		userGpaInfo[score.UserId] = info
 	}
 }
@@ -178,7 +178,7 @@ func addSubmission(db *sqlx.DB, sub Submission) {
 	key := fmt.Sprintf("%s_%s", sub.UserID, sub.ClassId)
 	submissions[key] = sub
 
-	// fmt.Printf("add submission: %s\n", key)
+	// fmt.Printf("add submission: %s, %s\n", sub.UserID, sub.ClassId)
 	// if len(submissions) >= bulkSize {
 	// 	fmt.Printf("db bulk: %d\n", len(submissions))
 	// 	arr := []Submission{}

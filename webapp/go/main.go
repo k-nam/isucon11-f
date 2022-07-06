@@ -875,6 +875,7 @@ func (h *handlers) AddCourse(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.String(http.StatusBadRequest, "Invalid format.")
 	}
+	fmt.Printf("add course %v\n", req)
 
 	if req.Type != LiberalArts && req.Type != MajorSubjects {
 		return c.String(http.StatusBadRequest, "Invalid course type.")
@@ -958,25 +959,31 @@ func (h *handlers) SetCourseStatus(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 	defer tx.Rollback()
+	fmt.Printf("Course id %s\n", courseID)
 
-	var count int
-	if err := tx.Get(&count, "SELECT COUNT(*) FROM `courses` WHERE `id` = ? FOR UPDATE", courseID); err != nil {
+	var co []Course
+	// var count int
+	if err := tx.Select(&co, "SELECT * FROM `courses` WHERE `id` = ? FOR UPDATE", courseID); err != nil {
 		c.Logger().Error(err)
+		fmt.Println("a")
 		return c.NoContent(http.StatusInternalServerError)
 	}
-	if count == 0 {
+	if len(co) == 0 {
+		fmt.Println("c")
 		return c.String(http.StatusNotFound, "No such course.")
 	}
+	fmt.Printf("%v\n", co)
 
 	if _, err := tx.Exec("UPDATE `courses` SET `status` = ? WHERE `id` = ?", req.Status, courseID); err != nil {
 		c.Logger().Error(err)
+		fmt.Println("b")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	// fmt.Printf("Close course: %s\n", courseID)
+	fmt.Printf("Close course: %s, %s\n", courseID, req.Status)
 	if req.Status == StatusClosed {
 		scores := getCourseScoreSums(tx, courseID)
-		addScores(scores)
+		addScores(scores, courseID)
 		// fmt.Printf("scores, %v\n", userGpaInfo)
 	}
 	// fmt.Printf("Finish close course: %s\n", courseID)
