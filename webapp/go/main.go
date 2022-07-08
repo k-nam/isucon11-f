@@ -903,6 +903,7 @@ func (h *handlers) AddCourse(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	fmt.Printf("Add course succeed %s\n", courseID)
 	return c.JSON(http.StatusCreated, AddCourseResponse{ID: courseID})
 }
 
